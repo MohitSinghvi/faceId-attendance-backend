@@ -237,3 +237,19 @@ app.get("/courses", async (req, res) => {
     return res.status(200).json(courseList);
   });
 });
+
+app.post("/add-professor", async (req, res) => {
+  const { name, description, id, email } = req.body;
+  con.query(
+    "insert into professor values (?,?,?,?)",
+    [id, name, email, description],
+    (err, result) => {
+      if (err) {
+        return res
+          .status(500)
+          .json({ ...err, message: "error adding professor to the rds" });
+      }
+      return res.status(200).json({ message: "add professor successful!" });
+    }
+  );
+});
