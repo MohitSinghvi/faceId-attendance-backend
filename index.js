@@ -2,6 +2,7 @@ const express = require("express");
 const app = express();
 const { v4: uuidv4 } = require("uuid");
 const bodyParser = require("body-parser");
+const short = require("short-uuid");
 
 const cors = require("cors");
 
@@ -273,4 +274,20 @@ app.get("/professors", async (req, res) => {
     });
     return res.status(200).json(professorList);
   });
+});
+
+app.post("/create-session", async (req, res) => {
+  const { courseId, timeStamp } = req.body;
+  con.query(
+    "insert into session values (?,?,?,?)",
+    [short.generate(), courseId, null, new Date(Number(timeStamp))],
+    (err, result) => {
+      if (err) {
+        return res
+          .status(500)
+          .json({ ...err, message: "error inserting session to rds" });
+      }
+      return res.status(200).json({ message: "session creation successful!" });
+    }
+  );
 });
