@@ -215,3 +215,25 @@ app.post("/add-course", async (req, res) => {
     }
   );
 });
+
+app.get("/courses", async (req, res) => {
+  con.query("SELECT * FROM course", (err, result) => {
+    if (err) {
+      return res.status(500).json({
+        ...err,
+        message: "error fetching courses from rds",
+      });
+    }
+    console.log("result", result);
+    const courseList = result.map((course) => {
+      return {
+        name: course.name,
+        code: course.id,
+        description: course.info,
+        professorId: course.professorId,
+        term: course.term,
+      };
+    });
+    return res.status(200).json(courseList);
+  });
+});
