@@ -253,3 +253,24 @@ app.post("/add-professor", async (req, res) => {
     }
   );
 });
+
+app.get("/professors", async (req, res) => {
+  con.query("SELECT * FROM professor", (err, result) => {
+    if (err) {
+      return res.status(500).json({
+        ...err,
+        message: "error fetching professors from rds",
+      });
+    }
+    console.log("result-professors", result);
+    const professorList = result.map((professor) => {
+      return {
+        name: professor.name,
+        id: professor.id,
+        description: professor.info,
+        email: professor.email,
+      };
+    });
+    return res.status(200).json(professorList);
+  });
+});
