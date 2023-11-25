@@ -139,12 +139,10 @@ app.post("/mark-attendance", (req, res) => {
                   body: JSON.stringify(err),
                 })
               );
-            res
-              .status(200)
-              .json({
-                message: "Attendance Marked",
-                rollNo: data?.FaceMatches[0]?.Face?.ExternalImageId,
-              });
+            res.status(200).json({
+              message: "Attendance Marked",
+              rollNo: data?.FaceMatches[0]?.Face?.ExternalImageId,
+            });
           }
         );
       } else {
@@ -163,4 +161,57 @@ app.get("/students", (req, res) => {
     if (err) throw err;
     return res.status(200).json({ body: result });
   });
+});
+
+app.post("/add-course", async (req, res) => {
+  const { name, code, description, professorId, term, students } = req.body;
+
+  if (students?.length) {
+    let studentIdList = "(" + students[0];
+    for (let i = 1; i < students.length; ++i) {
+      studentIdList += ", ";
+      studentIdList += students[i];
+    }
+    studentIdList += ")";
+    console.log("studentIdList", studentIdList);
+
+    const checkForInvalidStudents = new Promise((resolve, reject) => {
+      con.query(
+        "SELECT COUNT(*) as count FROM student WHERE rollNo IN " +
+          studentIdList,
+        function (err, result) {
+          if (err) {
+            return reject(err);
+          }
+          return resolve(result[0].count);
+        }
+      );
+    });
+
+    try {
+      const validStudentCount = await checkForInvalidStudents;
+      console.log("validStudentCount", validStudentCount);
+      if (validStudentCount !== students.length) {
+        return res.status(404).json({ message: "Invalid Students" });
+      }
+    } catch (err) {
+      return res
+        .status(500)
+        .json({ ...err, message: "invalid students in add-course api" });
+    }
+  }
+
+  con.query(
+    "insert into course values (?,?,?,?,?)",
+    [code, name, description, professorId, term],
+    function (err, result) {
+      if (err) {
+        return res.status(500).json({
+          ...err,
+          message: "error inserting courses in add-course api",
+        });
+      }
+      return res.status(200).json({ message: "add course successful!" });
+    }
+  );
 });
