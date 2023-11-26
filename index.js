@@ -279,8 +279,8 @@ app.get("/professors", async (req, res) => {
 app.post("/create-session", async (req, res) => {
   const { courseId, timeStamp } = req.body;
   con.query(
-    "insert into session values (?,?,?,?)",
-    [short.generate(), courseId, null, new Date(Number(timeStamp))],
+    "insert into session values (?,?,?,?,?)",
+    [short.generate(), courseId, null, new Date(), true],
     (err, result) => {
       if (err) {
         return res
