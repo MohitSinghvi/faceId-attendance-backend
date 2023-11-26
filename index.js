@@ -278,16 +278,17 @@ app.get("/professors", async (req, res) => {
 
 app.post("/create-session", async (req, res) => {
   const { courseId, timeStamp } = req.body;
+  const sessionId = short.generate();
   con.query(
     "insert into session values (?,?,?,?,?)",
-    [short.generate(), courseId, null, new Date(), true],
+    [sessionId, courseId, null, new Date(), true],
     (err, result) => {
       if (err) {
         return res
           .status(500)
           .json({ ...err, message: "error inserting session to rds" });
       }
-      return res.status(200).json({ message: "session creation successful!" });
+      return res.status(200).json({sessionId: sessionId, message: "session creation successful!" });
     }
   );
 });
