@@ -69,7 +69,7 @@ app.post("/addStudent", (req, res) => {
   // Call the IndexFaces operation to add the face to the collection
 
   con.query(
-    "insert into student values (?,?,?,?)",
+    "insert into student values (?,?,?,?,?)",
     [rollNo, name, course, batch, email],
     function (err, result) {
       if (err)
