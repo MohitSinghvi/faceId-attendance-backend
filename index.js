@@ -291,3 +291,77 @@ app.post("/create-session", async (req, res) => {
     }
   );
 });
+
+app.get("/sessions", async (req, res) => {
+  const { courseId } = req.query;
+
+  const fetchCourseInfo = new Promise((resolve, reject) => {
+    con.query(
+      `SELECT id, name, professorId FROM course WHERE id="${courseId}"`,
+      (err, result) => {
+        if (err) {
+          return reject(err);
+        }
+        console.log("result", result);
+        const course = {
+          courseName: result[0].name,
+          professorId: result[0].professorId,
+        };
+        return resolve(course);
+      }
+    );
+  });
+
+  let courseInfo = { courseId };
+  try {
+    const temp = await fetchCourseInfo;
+    courseInfo = { ...courseInfo, ...temp };
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch course info - sessions-get-api",
+    });
+  }
+
+  const fetchProfessorName = new Promise((resolve, reject) => {
+    con.query(
+      `SELECT name FROM professor WHERE id = "${courseInfo.professorId}"`,
+      (err, result) => {
+        if (err) {
+          return reject(err);
+        }
+        console.log("result", result);
+        const professorName = result[0].name;
+        return resolve(professorName);
+      }
+    );
+  });
+
+  try {
+    const temp = await fetchProfessorName;
+    courseInfo = { ...courseInfo, professor: temp };
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch professor name - sessions-get-api",
+    });
+  }
+
+  const sessions = [];
+  con.query(
+    `SELECT sessionTimeStamp FROM session WHERE courseId = "${courseId}"`,
+    (err, result) => {
+      if (err) {
+        return res.status(500).json({
+          ...err,
+          message: "failed to fetch sessionTimeStamp - session-get-api",
+        });
+      }
+      console.log("result", result);
+      const sessions = result.map((item) => {
+        return { ...courseInfo, timeStamp: item.sessionTimeStamp };
+      });
+      return res.status(200).json(sessions);
+    }
+  );
+});
