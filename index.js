@@ -61,7 +61,7 @@ app.use(bodyParser.json());
 
 app.post("/addStudent", (req, res) => {
   const collectionId = "cognitoCollectionGS";
-  const { name, rollNo, course, batch, image } = req.body;
+  const { name, rollNo, course, batch, image, email } = req.body;
   // console.log(name, rollNo, course, batch, image);
   // Decode base64 image data
   const binaryImageData = Buffer.from(image, "base64");
@@ -70,7 +70,7 @@ app.post("/addStudent", (req, res) => {
 
   con.query(
     "insert into student values (?,?,?,?)",
-    [rollNo, name, course, batch],
+    [rollNo, name, course, batch, email],
     function (err, result) {
       if (err)
         res.send(
@@ -349,7 +349,10 @@ app.post("/create-session", async (req, res) => {
           .status(500)
           .json({ ...err, message: "error inserting session to rds" });
       }
-      return res.status(200).json({sessionId: sessionId, message: "session creation successful!" });
+      return res.status(200).json({
+        sessionId: sessionId,
+        message: "session creation successful!",
+      });
     }
   );
 });
@@ -427,3 +430,5 @@ app.get("/sessions", async (req, res) => {
     }
   );
 });
+
+app.get("/attendances", async());
