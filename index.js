@@ -158,7 +158,7 @@ app.get("/students", (req, res) => {
   if (req.query.rollNo) {
     appendString = ' where rollNo = "' + req.query.rollNo + '"';
   }
-  con.query("SELECT * from Students" + appendString, function (err, result) {
+  con.query("SELECT * from student" + appendString, function (err, result) {
     if (err) throw err;
     return res.status(200).json({ body: result });
   });
@@ -240,7 +240,8 @@ app.get("/courses", async (req, res) => {
 });
 
 app.post("/add-professor", async (req, res) => {
-  const { name, description, id, email } = req.body;
+  const { name, description, email } = req.body;
+  const id = short.generate();
   con.query(
     "insert into professor values (?,?,?,?)",
     [id, name, email, description],
