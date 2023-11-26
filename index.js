@@ -62,7 +62,7 @@ app.use(bodyParser.json());
 app.post("/addStudent", (req, res) => {
   const collectionId = "cognitoCollectionGS";
   const { name, rollNo, course, batch, image } = req.body;
-
+  // console.log(name, rollNo, course, batch, image);
   // Decode base64 image data
   const binaryImageData = Buffer.from(image, "base64");
 
@@ -106,10 +106,9 @@ app.post("/addStudent", (req, res) => {
   );
 });
 
-app.post("/mark-attendance", (req, res) => {
+app.post("/mark-attendance", async (req, res) => {
   const collectionId = "cognitoCollectionGS";
-  const imageBytes = req.body.imageBytes;
-  const sessionId = req.body.sessionId;
+  const { imageBytes, sessionId, courseId } = req.body;
   const faceMatchThreshold = 70;
   const id = uuidv4();
 
@@ -122,13 +121,41 @@ app.post("/mark-attendance", (req, res) => {
     MaxFaces: 1,
   };
 
-  rekognition.searchFacesByImage(params, (err, data) => {
+  rekognition.searchFacesByImage(params, async (err, data) => {
     if (err) {
       res
         .status(500)
         .json({ error: "Error searching for faces in collection" });
     } else {
       if (data?.FaceMatches?.length > 0) {
+        const studentId = data?.FaceMatches[0]?.Face?.ExternalImageId;
+
+        const fetchIsEnrolled = new Promise((resolve, reject) => {
+          con.query(
+            `SELECT COUNT(*) as count FROM enroll WHERE studentId = "${studentId}" and courseId = "${courseId}"`,
+            (err, result) => {
+              if (err) {
+                return reject(err);
+              }
+              return resolve(result[0].count === 1);
+            }
+          );
+        });
+
+        try {
+          const isEnrolled = await fetchIsEnrolled;
+          if (!isEnrolled) {
+            return res
+              .status(400)
+              .json({ message: "The student is not enrolled in this course" });
+          }
+        } catch (err) {
+          return res.status(500).json({
+            ...err,
+            message: "could not fetch data from enroll table",
+          });
+        }
+
         con.query(
           "insert into attendance values (?,?,?)",
           [id, sessionId, data?.FaceMatches[0]?.Face?.ExternalImageId],
@@ -165,42 +192,7 @@ app.get("/students", (req, res) => {
 });
 
 app.post("/add-course", async (req, res) => {
-  const { name, code, description, professorId, term, students } = req.body;
-
-  if (students?.length) {
-    let studentIdList = "(" + students[0];
-    for (let i = 1; i < students.length; ++i) {
-      studentIdList += ", ";
-      studentIdList += students[i];
-    }
-    studentIdList += ")";
-    console.log("studentIdList", studentIdList);
-
-    const checkForInvalidStudents = new Promise((resolve, reject) => {
-      con.query(
-        "SELECT COUNT(*) as count FROM student WHERE rollNo IN " +
-          studentIdList,
-        function (err, result) {
-          if (err) {
-            return reject(err);
-          }
-          return resolve(result[0].count);
-        }
-      );
-    });
-
-    try {
-      const validStudentCount = await checkForInvalidStudents;
-      console.log("validStudentCount", validStudentCount);
-      if (validStudentCount !== students.length) {
-        return res.status(404).json({ message: "Invalid Students" });
-      }
-    } catch (err) {
-      return res
-        .status(500)
-        .json({ ...err, message: "invalid students in add-course api" });
-    }
-  }
+  const { name, code, description, professorId, term } = req.body;
 
   con.query(
     "insert into course values (?,?,?,?,?)",
@@ -215,6 +207,74 @@ app.post("/add-course", async (req, res) => {
       return res.status(200).json({ message: "add course successful!" });
     }
   );
+});
+
+app.post("/course/enroll-students", async (req, res) => {
+  const { courseId } = req.query;
+  const { studentIds } = req.body;
+
+  if (!studentIds?.length) {
+    return res.status(404).json({ message: "studentIds not provided" });
+  }
+
+  let studentIdList = "(" + studentIds[0];
+  for (let i = 1; i < studentIds.length; ++i) {
+    studentIdList += ", ";
+    studentIdList += studentIds[i];
+  }
+  studentIdList += ")";
+  console.log("studentIdList", studentIdList);
+
+  const checkForInvalidStudents = new Promise((resolve, reject) => {
+    con.query(
+      "SELECT COUNT(*) as count FROM student WHERE rollNo IN " + studentIdList,
+      function (err, result) {
+        if (err) {
+          return reject(err);
+        }
+        return resolve(result[0].count);
+      }
+    );
+  });
+
+  try {
+    const validStudentCount = await checkForInvalidStudents;
+    console.log("validStudentCount", validStudentCount);
+    if (validStudentCount !== studentIds.length) {
+      return res.status(404).json({ message: "Invalid Students" });
+    }
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "error fetching from rds in /course/enroll-students api",
+    });
+  }
+
+  Promise.all(
+    studentIds.map((studentId) => {
+      return new Promise((resolve, reject) => {
+        con.query(
+          "insert into enroll values (?,?)",
+          [studentId, courseId],
+          (err, result) => {
+            if (err) {
+              return reject(err);
+            }
+            return resolve();
+          }
+        );
+      });
+    })
+  )
+    .then(() => {
+      return res.status(200).json({ message: "enrollment success" });
+    })
+    .catch((err) => {
+      return res.status(500).json({
+        ...err,
+        message: "error inserting into rds - course/enroll-students api",
+      });
+    });
 });
 
 app.get("/courses", async (req, res) => {
