@@ -8,7 +8,8 @@ const cors = require("cors");
 
 const multer = require("multer");
 const AWS = require("aws-sdk");
-
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
@@ -58,6 +59,89 @@ con.connect(function (err) {
 AWS.config.update({ region: "us-east-1" });
 const rekognition = new AWS.Rekognition();
 app.use(bodyParser.json());
+
+const generateRandomSecret = () => {
+  return crypto.randomBytes(32).toString('hex');
+};
+
+
+app.post("/login", (req, res) => {
+  const { email, password } = req.body;
+
+  con.query(
+    "SELECT * FROM users WHERE email = ? AND password = ?",
+    [email, password],
+    function (err, result) {
+      if (err) {
+        return res.status(500).json({
+          ...err,
+          message: "Error in login query",
+        });
+      }
+
+      if (result.length === 0) {
+        return res.status(401).json({
+          message: "Invalid email or password",
+        });
+      }
+
+      const user = result[0];
+      const JWT_SECRET = generateRandomSecret();
+      
+      const token = jwt.sign(
+        {
+          userId: user.userId,
+          name: user.name,
+          role: user.role,
+          email: user.email,
+        },
+        JWT_SECRET
+      );
+
+      return res.status(200).json({
+        userId: user.userId,
+        name: user.name,
+        role: user.role,
+        email: user.email,
+        token: token,
+      });
+    }
+  );
+});
+
+
+app.post("/signup", (req, res) => {
+  const { email, password, name } = req.body;
+
+  con.query(
+    "INSERT INTO users (email, password, name) VALUES (?, ?, ?)",
+    [email, password, name],
+    function (err, result) {
+      if (err) {
+        return res.status(500).json({
+          ...err,
+          message: "Error in signup query",
+        });
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: "Signup successful",
+      });
+    }
+  );
+});
+
+
+
+app.post("/logout", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    message: "Logout successful",
+  });
+});
+
+
 
 app.post("/addStudent", (req, res) => {
   const collectionId = "cognitoCollectionGS";
