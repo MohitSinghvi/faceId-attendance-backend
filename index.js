@@ -61,7 +61,7 @@ app.use(bodyParser.json());
 
 app.post("/addStudent", (req, res) => {
   const collectionId = "cognitoCollectionGS";
-  const { name, rollNo, course, batch, image } = req.body;
+  const { name, rollNo, course, batch, image, email } = req.body;
   // console.log(name, rollNo, course, batch, image);
   // Decode base64 image data
   const binaryImageData = Buffer.from(image, "base64");
@@ -69,8 +69,8 @@ app.post("/addStudent", (req, res) => {
   // Call the IndexFaces operation to add the face to the collection
 
   con.query(
-    "insert into student values (?,?,?,?)",
-    [rollNo, name, course, batch],
+    "insert into student values (?,?,?,?,?)",
+    [rollNo, name, course, batch, email],
     function (err, result) {
       if (err)
         res.send(
@@ -349,7 +349,10 @@ app.post("/create-session", async (req, res) => {
           .status(500)
           .json({ ...err, message: "error inserting session to rds" });
       }
-      return res.status(200).json({sessionId: sessionId, message: "session creation successful!" });
+      return res.status(200).json({
+        sessionId: sessionId,
+        message: "session creation successful!",
+      });
     }
   );
 });
@@ -426,4 +429,193 @@ app.get("/sessions", async (req, res) => {
       return res.status(200).json(sessions);
     }
   );
+});
+
+app.get("/attendances", async (req, res) => {
+  const { courseId, rollNo } = req.query;
+
+  const fetchCourses = new Promise((resolve, reject) => {
+    con.query(`SELECT id, name from course`, (err, result) => {
+      if (err) {
+        return reject(err);
+      }
+      const courses = result.map((item) => {
+        return { courseId: item.id, courseName: item.name };
+      });
+      return resolve(courses);
+    });
+  });
+  let courses;
+  try {
+    courses = await fetchCourses;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch data from course rds - attendances-get-api",
+    });
+  }
+
+  const fetchStudents = new Promise((resolve, reject) => {
+    con.query(`SELECT rollNo, name FROM student`, (err, result) => {
+      if (err) {
+        return reject(err);
+      }
+      const students = result.map((item) => {
+        return { rollNo: item.rollNo, name: item.name };
+      });
+      return resolve(students);
+    });
+  });
+  let students;
+  try {
+    students = await fetchStudents;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch data from student rds - attendances-get-api",
+    });
+  }
+
+  if (courseId) {
+    for (const c in courses) {
+      const course = courses[c];
+      if (course.courseId === courseId) {
+        courses = [course];
+        break;
+      }
+    }
+  }
+
+  if (rollNo) {
+    for (const s in students) {
+      const student = students[s];
+      if (student.rollNo === rollNo) {
+        students = [student];
+        break;
+      }
+    }
+  }
+
+  const fetchSessions = new Promise((resolve, reject) => {
+    con.query(`SELECT sessionId, courseId FROM session`, (err, result) => {
+      if (err) {
+        return reject(err);
+      }
+      const sessions = result.map((item) => {
+        return { sessionId: item.sessionId, courseId: item.courseId };
+      });
+      return resolve(sessions);
+    });
+  });
+  let sessions;
+  try {
+    sessions = await fetchSessions;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch data from session rds - attendances-get-api",
+    });
+  }
+
+  const sessionsByCourseId = {};
+  for (const c in courses) {
+    const course = courses[c];
+    sessionsByCourseId[course.courseId] = [];
+  }
+  for (const s in sessions) {
+    const session = sessions[s];
+    sessionsByCourseId[session.courseId].push(session.sessionId);
+  }
+
+  const fetchAttendance = new Promise((resolve, reject) => {
+    con.query(`SELECT sessionId, studentId FROM attendance`, (err, result) => {
+      if (err) {
+        return reject(err);
+      }
+      const attendance = result.map((item) => {
+        return { sessionId: item.sessionId, studentId: item.studentId };
+      });
+      return resolve(attendance);
+    });
+  });
+  let attendance;
+  try {
+    attendance = await fetchAttendance;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch data from attendance rds - attendances-get-api",
+    });
+  }
+
+  const fetchEnroll = new Promise((resolve, reject) => {
+    con.query(`SELECT studentId, courseId FROM enroll`, (err, result) => {
+      if (err) {
+        return reject(err);
+      }
+      const enrollData = result.map((item) => {
+        return { studentId: item.studentId, courseId: item.courseId };
+      });
+      return resolve(enrollData);
+    });
+  });
+  let enrollData;
+  try {
+    enrollData = await fetchEnroll;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch data from enroll rds - attendances-get-api",
+    });
+  }
+
+  const info = [];
+  for (const s in students) {
+    const student = students[s];
+    for (const c in courses) {
+      const course = courses[c];
+      let found = false;
+      for (const d in enrollData) {
+        const data = enrollData[d];
+        if (
+          data.studentId === student.rollNo &&
+          data.courseId === course.courseId
+        ) {
+          found = true;
+          break;
+        }
+      }
+      const data = {
+        rollNo: student.rollNo,
+        studentName: student.name,
+        courseId: course.courseId,
+        courseName: course.courseName,
+      };
+      if (!found) {
+        data.percentageAttendance = "not enrolled";
+      } else if (!sessionsByCourseId[course.courseId]?.length) {
+        data.percentageAttendance = "this course did not have any session";
+      } else {
+        let cnt = 0;
+        for (const ss in sessionsByCourseId[course.courseId]) {
+          const sessionId = sessionsByCourseId[course.courseId][ss];
+          for (const attendanceInfo_ in attendance) {
+            const attendanceInfo = attendance[attendanceInfo_];
+            if (
+              attendanceInfo.sessionId === sessionId &&
+              attendanceInfo.studentId === student
+            ) {
+              ++cnt;
+              break;
+            }
+          }
+        }
+        data.percentageAttendance =
+          cnt / sessionsByCourseId[course.courseId].length;
+      }
+      info.push(data);
+    }
+  }
+
+  return res.status(200).json(info);
 });
