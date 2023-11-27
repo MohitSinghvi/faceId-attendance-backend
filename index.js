@@ -869,3 +869,74 @@ app.post("/end-session", async (req, res) => {
     }
   );
 });
+
+app.get("/student", async (req, res) => {
+  const { rollNo } = req.query;
+  con.query(
+    `SELECT * FROM student WHERE rollNo = "${rollNo}"`,
+    (err, result) => {
+      if (err) {
+        return res
+          .status(500)
+          .json({ ...err, message: "error fetching from rds" });
+      }
+      if (!result?.length) {
+        return res.status(404).json({ message: "not found" });
+      }
+      const data = {
+        rollNo: result[0].rollNo,
+        name: result[0].name,
+        course: result[0].course,
+        batch: result[0].batch,
+        email: result[0].email,
+      };
+      return res.status(200).json(data);
+    }
+  );
+});
+
+app.get("/professor", async (req, res) => {
+  const { professorId } = req.query;
+  con.query(
+    `SELECT * FROM professor WHERE id = "${professorId}"`,
+    (err, result) => {
+      if (err) {
+        return res
+          .status(500)
+          .json({ ...err, message: "error fetching from rds" });
+      }
+      if (!result?.length) {
+        return res.status(404).json({ message: "not found" });
+      }
+      const data = {
+        id: result[0].id,
+        name: result[0].name,
+        email: result[0].email,
+        info: result[0].info,
+      };
+      return res.status(200).json(data);
+    }
+  );
+});
+
+app.get("/course", async (req, res) => {
+  const { courseId } = req.query;
+  con.query(`SELECT * FROM course WHERE id="${courseId}"`, (err, result) => {
+    if (err) {
+      return res
+        .status(500)
+        .json({ ...err, message: "error fetching from rds" });
+    }
+    if (!result?.length) {
+      return res.status(404).json({ message: "not found" });
+    }
+    const data = {
+      id: result[0].id,
+      name: result[0].name,
+      professorId: result[0].professorId,
+      info: result[0].info,
+      term: result[0].term,
+    };
+    return res.status(200).json(data);
+  });
+});
