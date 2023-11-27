@@ -619,3 +619,128 @@ app.get("/attendances", async (req, res) => {
 
   return res.status(200).json(info);
 });
+
+app.get("/attendances/session", async (req, res) => {
+  const { sessionId } = req.query;
+
+  const fetchCourseId = new Promise((resolve, reject) => {
+    con.query(
+      `SELECT courseId FROM session WHERE sessionId = "${sessionId}"`,
+      (err, result) => {
+        if (err) {
+          return reject(err);
+        }
+        return resolve(result[0].courseId);
+      }
+    );
+  });
+
+  let courseId;
+  try {
+    courseId = await fetchCourseId;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch from session rds - attendances/session-api",
+    });
+  }
+
+  const fetchEnrolledStudentIds = new Promise((resolve, reject) => {
+    con.query(
+      `SELECT studentId FROM enroll WHERE courseId = "${courseId}"`,
+      (err, result) => {
+        if (err) {
+          return reject(err);
+        }
+        const studentIds = result.map((item) => item.studentId);
+        return resolve(studentIds);
+      }
+    );
+  });
+  let studentIds;
+  try {
+    studentIds = await fetchEnrolledStudentIds;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch from enroll rds - attendances/session-api",
+    });
+  }
+
+  if (!studentIds?.length) {
+    return res.status(400).json({
+      message: "no student enrolled in the course of this session",
+    });
+  }
+
+  const fetchStudents = new Promise((resolve, reject) => {
+    let studentIdList = "(" + studentIds[0];
+    for (let i = 1; i < studentIds.length; ++i) {
+      studentIdList += ", ";
+      studentIdList += studentIds[i];
+    }
+    studentIdList += ")";
+    console.log(studentIdList);
+    con.query(
+      `SELECT rollNo, name FROM student WHERE rollNo IN ${studentIdList}`,
+      (err, result) => {
+        if (err) {
+          return reject(err);
+        }
+        const students = result.map((item) => {
+          return { rollNo: item.rollNo, name: item.name };
+        });
+        return resolve(students);
+      }
+    );
+  });
+  let students;
+  try {
+    students = await fetchStudents;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch from student rds - attendances/session-api",
+    });
+  }
+
+  const fetchAttendance = new Promise((resolve, reject) => {
+    con.query(
+      `SELECT studentId FROM attendance WHERE sessionId="${sessionId}"`,
+      (err, result) => {
+        if (err) {
+          return reject(err);
+        }
+        const presentStudents = result.map((item) => item.studentId);
+        return resolve(presentStudents);
+      }
+    );
+  });
+  let presentStudents;
+  try {
+    presentStudents = await fetchAttendance;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch from attendance rds - attendances/session-api",
+    });
+  }
+
+  const info = {};
+  for (let i = 0; i < students.length; ++i) {
+    const studentData = {
+      rollNo: students[i].rollNo,
+      studentName: students[i].name,
+    };
+    let isPresent = false;
+    for (let j = 0; j < presentStudents; ++j) {
+      if (studentData.rollNo === presentStudents[i]) {
+        isPresent = true;
+        break;
+      }
+    }
+    info.push({ ...studentData, present: isPresent });
+  }
+
+  return res.status(200).json(info);
+});
