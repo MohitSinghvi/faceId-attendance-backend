@@ -112,6 +112,30 @@ app.post("/mark-attendance", async (req, res) => {
   const faceMatchThreshold = 70;
   const id = uuidv4();
 
+  const fetchSessionIsActive = new Promise((resolve, reject) => {
+    con.query(
+      `SELECT is_active FROM session WHERE sessionId = "${sessionId}"`,
+      (err, result) => {
+        if (err) {
+          return reject(err);
+        }
+        return resolve(result[0].is_active);
+      }
+    );
+  });
+  let sessionIsActive;
+  try {
+    sessionIsActive = await fetchSessionIsActive;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "error fetching from session rds in /mark-attendance api",
+    });
+  }
+  if (!sessionIsActive) {
+    return res.status(400).json({ message: "session inactive" });
+  }
+
   const params = {
     CollectionId: collectionId,
     Image: {
@@ -743,4 +767,105 @@ app.get("/attendances/session", async (req, res) => {
   }
 
   return res.status(200).json(info);
+});
+
+app.get("/session", async (req, res) => {
+  const { sessionId } = req.query;
+
+  const fetchSessionData = new Promise((resolve, reject) => {
+    con.query(
+      `SELECT sessionId, courseId, sessionTimeStamp, is_active FROM session WHERE sessionId="${sessionId}"`,
+      (err, result) => {
+        if (err) {
+          return reject(err);
+        }
+        const sessionData = {
+          sessionId,
+          courseId: result[0].courseId,
+          sessionTimeStamp: result[0].sessionTimeStamp,
+          is_active: result[0].is_active,
+        };
+        return resolve(sessionData);
+      }
+    );
+  });
+
+  let sessionData;
+  try {
+    sessionData = await fetchSessionData;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch from session rds - session-get-api",
+    });
+  }
+
+  const fetchCourse = new Promise((resolve, reject) => {
+    con.query(
+      `SELECT name, professorId FROM course WHERE id="${sessionData.courseId}"`,
+      (err, result) => {
+        if (err) {
+          return reject(err);
+        }
+        const course = {
+          name: result[0].name,
+          professorId: result[0].professorId,
+        };
+        return resolve(course);
+      }
+    );
+  });
+  let course;
+  try {
+    course = await fetchCourse;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch from course rds - session-get-api",
+    });
+  }
+
+  const fetchProfessorName = new Promise((resolve, reject) => {
+    con.query(
+      `SELECT name FROM professor WHERE id="${course.professorId}"`,
+      (err, result) => {
+        if (err) {
+          return reject(err);
+        }
+        return resolve(result[0].name);
+      }
+    );
+  });
+  let professorName;
+  try {
+    professorName = await fetchProfessorName;
+  } catch (err) {
+    return res.status(500).json({
+      ...err,
+      message: "could not fetch from professor rds - session-get-api",
+    });
+  }
+
+  const info = {
+    courseId: sessionData.courseId,
+    courseName: course.name,
+    professor: professorName,
+    timeStamp: sessionData.sessionTimeStamp,
+    is_active: Boolean(sessionData.is_active),
+  };
+});
+
+app.post("/end-session", async (req, res) => {
+  const { sessionId } = req.query;
+  con.query(
+    `UPDATE session SET is_active = 0 WHERE sessionId="${sessionId}"`,
+    (err, result) => {
+      if (err) {
+        return res
+          .status(500)
+          .json({ ...err, message: "could not insert to the database" });
+      }
+      return res.status(200).json({ message: "session end success" });
+    }
+  );
 });
