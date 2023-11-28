@@ -44,17 +44,15 @@ app.listen(port, () => {
 app.get("/", (req, res) => res.send("My first Node API!"));
 
 var mysql = require("mysql");
-var con = mysql.createConnection({
+
+var con = mysql.createPool({
+  connectionLimit : 10,
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_DATABASE,
-});
+})
 
-con.connect(function (err) {
-  if (err) throw err;
-  console.log("Connected!");
-});
 
 AWS.config.update({ region: "us-east-1" });
 const rekognition = new AWS.Rekognition();
@@ -306,7 +304,7 @@ app.post("/add-course", async (req, res) => {
           message: "error inserting courses in add-course api",
         });
       }
-      return res.status(200).json({ message: "add course successful!" });
+      return res.status(200).json({ code, message: "add course successful!" });
     }
   );
 });
@@ -452,6 +450,7 @@ app.post("/create-session", async (req, res) => {
           .json({ ...err, message: "error inserting session to rds" });
       }
       return res.status(200).json({
+        courseId,
         sessionId: sessionId,
         message: "session creation successful!",
       });
@@ -516,7 +515,7 @@ app.get("/sessions", async (req, res) => {
 
   const sessions = [];
   con.query(
-    `SELECT sessionTimeStamp FROM session WHERE courseId = "${courseId}"`,
+    `SELECT sessionTimeStamp, sessionId FROM session WHERE courseId = "${courseId}"`,
     (err, result) => {
       if (err) {
         return res.status(500).json({
@@ -526,7 +525,7 @@ app.get("/sessions", async (req, res) => {
       }
       console.log("result", result);
       const sessions = result.map((item) => {
-        return { ...courseInfo, timeStamp: item.sessionTimeStamp };
+        return { ...courseInfo, timeStamp: item.sessionTimeStamp, sessionId: item.sessionId };
       });
       return res.status(200).json(sessions);
     }
@@ -1018,5 +1017,33 @@ app.get("/course", async (req, res) => {
       term: result[0].term,
     };
     return res.status(200).json(data);
+  });
+});
+
+
+app.get("/courseAttendance", (req, res) => {
+  let courseId = req.query?.courseId;
+  query = `SELECT
+  s.rollNo AS studentId,
+  s.name AS name,
+  COUNT(a.sessionId) * 100.0 / COUNT(DISTINCT se.sessionId) AS percentageAttendance
+FROM
+  student s
+JOIN
+  enroll e ON s.rollNo = e.studentId
+JOIN
+  session se ON e.courseId = se.courseId
+LEFT JOIN
+  attendance a ON se.sessionId = a.sessionId AND s.rollNo = a.studentId
+WHERE
+  e.courseId = ?
+GROUP BY
+  s.rollNo, s.name
+ORDER BY
+  percentageAttendance DESC;
+`
+  con.query(query,[courseId], function (err, result) {
+    if (err) throw err;
+    return res.status(200).json({ body: result });
   });
 });
