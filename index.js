@@ -8,8 +8,8 @@ const cors = require("cors");
 
 const multer = require("multer");
 const AWS = require("aws-sdk");
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
+const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
@@ -61,9 +61,8 @@ const rekognition = new AWS.Rekognition();
 app.use(bodyParser.json());
 
 const generateRandomSecret = () => {
-  return crypto.randomBytes(32).toString('hex');
+  return crypto.randomBytes(32).toString("hex");
 };
-
 
 app.post("/login", (req, res) => {
   const { email, password } = req.body;
@@ -87,7 +86,7 @@ app.post("/login", (req, res) => {
 
       const user = result[0];
       const JWT_SECRET = generateRandomSecret();
-      
+
       const token = jwt.sign(
         {
           userId: user.userId,
@@ -108,7 +107,6 @@ app.post("/login", (req, res) => {
     }
   );
 });
-
 
 app.post("/signup", (req, res) => {
   const { email, password, name } = req.body;
@@ -132,16 +130,12 @@ app.post("/signup", (req, res) => {
   );
 });
 
-
-
 app.post("/logout", (req, res) => {
   return res.status(200).json({
     success: true,
     message: "Logout successful",
   });
 });
-
-
 
 app.post("/addStudent", (req, res) => {
   const collectionId = "cognitoCollectionGS";
@@ -834,15 +828,17 @@ app.get("/attendances/session", async (req, res) => {
     });
   }
 
-  const info = {};
+  const info = [];
+  console.log("ASDASD", presentStudents);
+  console.log("SADASDSA", students);
   for (let i = 0; i < students.length; ++i) {
     const studentData = {
       rollNo: students[i].rollNo,
       studentName: students[i].name,
     };
     let isPresent = false;
-    for (let j = 0; j < presentStudents; ++j) {
-      if (studentData.rollNo === presentStudents[i]) {
+    for (let j = 0; j < presentStudents.length; ++j) {
+      if (studentData.rollNo === presentStudents[j]) {
         isPresent = true;
         break;
       }
