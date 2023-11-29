@@ -10,6 +10,9 @@ const multer = require("multer");
 const AWS = require("aws-sdk");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+require("dotenv").config();
+
+
 AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
@@ -24,7 +27,7 @@ const upload = multer({ storage });
 
 const https = require("https");
 
-require("dotenv").config();
+
 
 app.use(function (req, res, next) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -62,78 +65,24 @@ const generateRandomSecret = () => {
   return crypto.randomBytes(32).toString("hex");
 };
 
-app.post("/login", (req, res) => {
-  const { email, password } = req.body;
 
-  con.query(
-    "SELECT * FROM users WHERE email = ? AND password = ?",
-    [email, password],
-    function (err, result) {
-      if (err) {
-        return res.status(500).json({
-          ...err,
-          message: "Error in login query",
-        });
-      }
+const AmazonCognitoIdentity = require('amazon-cognito-identity-js');
 
-      if (result.length === 0) {
-        return res.status(401).json({
-          message: "Invalid email or password",
-        });
-      }
+const cognitoIdentityServiceProvider = new AWS.CognitoIdentityServiceProvider({ region: 'us-east-1' });
 
-      const user = result[0];
-      const JWT_SECRET = generateRandomSecret();
+// AWS Cognito configuration
+const poolData = {
+  UserPoolId: process.env.USER_POOL_ID,
+  ClientId: process.env.CLIENT_ID,
+};
 
-      const token = jwt.sign(
-        {
-          userId: user.userId,
-          name: user.name,
-          role: user.role,
-          email: user.email,
-        },
-        JWT_SECRET
-      );
+const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
 
-      return res.status(200).json({
-        userId: user.userId,
-        name: user.name,
-        role: user.role,
-        email: user.email,
-        token: token,
-      });
-    }
-  );
-});
+const ses = new AWS.SES({ region: "us-east-1" });
 
-app.post("/signup", (req, res) => {
-  const { email, password, name } = req.body;
 
-  con.query(
-    "INSERT INTO users (email, password, name) VALUES (?, ?, ?)",
-    [email, password, name],
-    function (err, result) {
-      if (err) {
-        return res.status(500).json({
-          ...err,
-          message: "Error in signup query",
-        });
-      }
 
-      return res.status(201).json({
-        success: true,
-        message: "Signup successful",
-      });
-    }
-  );
-});
 
-app.post("/logout", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    message: "Logout successful",
-  });
-});
 
 app.post("/addStudent", (req, res) => {
   const collectionId = "cognitoCollectionGS";
@@ -172,8 +121,67 @@ app.post("/addStudent", (req, res) => {
           console.error("Error adding image to collection:", err);
           res.status(500).json({ error: "Error adding image to collection" });
         } else {
-          console.log("Image added to collection:", data);
-          res.status(200).json({ message: "Image added to collection", data });
+                // const email = email;
+      const password = 'password';
+      const role = 'Student';
+
+      const attributeList = [
+        new AmazonCognitoIdentity.CognitoUserAttribute({ Name: 'custom:role', Value: role }),
+        new AmazonCognitoIdentity.CognitoUserAttribute({ Name: 'custom:userId', Value: rollNo }),
+      ];
+    
+      userPool.signUp(email, password, attributeList, null, (err, result) => {
+        if (err) {
+          console.error(err);
+          return res.status(500).json({ error: err.message });
+        }
+
+        const adminConfirmParams = {
+          UserPoolId: process.env.USER_POOL_ID,
+          Username: email,
+        };
+
+        cognitoIdentityServiceProvider.adminConfirmSignUp(adminConfirmParams, (adminConfirmErr, adminConfirmData) => {
+          if (adminConfirmErr) {
+            console.error(adminConfirmErr);
+            return res.status(200).json({ message: "Image added to collection", data });
+            // return res.status(500).json({ error: adminConfirmErr.message });
+          }
+                  // Send confirmation email
+          const params = {
+            Destination: {
+              ToAddresses: [email],
+            },
+            Message: {
+              Body: {
+                Text: {
+                  Data: `Thank you for signing up! Your password is ${password}.`,
+                },
+              },
+              Subject: {
+                Data: 'Confirmation Email',
+              },
+            },
+            Source: 'msinghvi16@gmail.com', // Replace with your verified email address in SES
+          };
+      
+          ses.sendEmail(params, (emailErr, emailData) => {
+            if (emailErr) {
+              console.error(emailErr);
+              // return res.status(500).json({ error: emailErr.message });
+              return res.status(200).json({ message: "Signup Sucess, but email not sent", data });
+            }
+      
+            res.json({
+              message: 'Student successfully signed up. Confirmation email sent.',
+              result,
+              emailData,
+            });
+          });
+        });
+      });
+          // console.log("Image added to collection:", data);
+          // res.status(200).json({ message: "Image added to collection", data });
         }
       });
 
@@ -378,7 +386,18 @@ app.post("/course/enroll-students", async (req, res) => {
 });
 
 app.get("/courses", async (req, res) => {
-  con.query("SELECT * FROM course", (err, result) => {
+
+  const { professorId, studentId } = req.query;
+  let appendString = "";
+  if(professorId){
+    appendString = "where professorId = '"+ professorId+"'";
+  }
+
+  if(studentId) {
+    appendString = " c, enroll e where c.id = e.courseId and e.studentId = "+ studentId
+  }
+
+  con.query("SELECT * FROM course "+ appendString, (err, result) => {
     if (err) {
       return res.status(500).json({
         ...err,
@@ -411,7 +430,74 @@ app.post("/add-professor", async (req, res) => {
           .status(500)
           .json({ ...err, message: "error adding professor to the rds" });
       }
-      return res.status(200).json({ message: "add professor successful!" });
+
+      // const email = email;
+      const password = short.generate();
+      const role = 'Professor';
+
+
+
+      const attributeList = [
+        new AmazonCognitoIdentity.CognitoUserAttribute({ Name: 'custom:role', Value: role }),
+        new AmazonCognitoIdentity.CognitoUserAttribute({ Name: 'custom:userId', Value: id }),
+      ];
+    
+      userPool.signUp(email, password, attributeList, null, (err, result) => {
+        if (err) {
+          console.error(err);
+          return res.status(500).json({ error: err.message });
+        }
+
+
+        const adminConfirmParams = {
+          UserPoolId: process.env.USER_POOL_ID,
+          Username: email,
+        };
+
+
+
+        cognitoIdentityServiceProvider.adminConfirmSignUp(adminConfirmParams, (adminConfirmErr, adminConfirmData) => {
+          if (adminConfirmErr) {
+            console.error(adminConfirmErr);
+            return res.status(500).json({ error: adminConfirmErr.message });
+          }
+                  // Send confirmation email
+          const params = {
+            Destination: {
+              ToAddresses: [email],
+            },
+            Message: {
+              Body: {
+                Text: {
+                  Data: `Thank you for signing up! Your password is ${password}.`,
+                },
+              },
+              Subject: {
+                Data: 'Confirmation Email',
+              },
+            },
+            Source: 'msinghvi16@gmail.com', // Replace with your verified email address in SES
+          };
+      
+          ses.sendEmail(params, (emailErr, emailData) => {
+            if (emailErr) {
+              console.error(emailErr);
+              return res.status(500).json({ error: emailErr.message });
+            }
+      
+            res.json({
+              message: 'Professor successfully signed up. Confirmation email sent.',
+              result,
+              emailData,
+            });
+          });
+        });
+      });
+
+
+
+      
+      // return res.status(200).json({ message: "add professor successful!" });
     }
   );
 });
@@ -1046,4 +1132,127 @@ ORDER BY
     if (err) throw err;
     return res.status(200).json({ body: result });
   });
+});
+
+
+app.get("/studentAttendance", (req, res) => {
+  let studentId = req.query?.studentId;
+  query = `SELECT
+  c.id AS courseId,
+  c.name AS courseName,
+  COUNT(DISTINCT a.sessionId) * 100.0 / COUNT(DISTINCT s.sessionId) AS percentageAttendance
+FROM
+  course c
+JOIN
+  enroll e ON c.id = e.courseId
+LEFT JOIN
+  session s ON c.id = s.courseId
+LEFT JOIN
+  attendance a ON s.sessionId = a.sessionId AND e.studentId = a.studentId
+WHERE
+  e.studentId = ?
+GROUP BY
+  c.id, c.name
+ORDER BY
+  c.id;
+`
+  con.query(query,[studentId], function (err, result) {
+    if (err) throw err;
+    return res.status(200).json({ body: result });
+  });
+});
+
+
+app.post('/login', (req, res) => {
+  const { email, password } = req.body;
+
+  const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails({
+    Username: email,
+    Password: password,
+  });
+
+  const userData = {
+    Username: email,
+    Pool: userPool,
+  };
+
+  const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+
+  cognitoUser.authenticateUser(authenticationDetails, {
+    onSuccess: (session) => {
+
+      cognitoUser.getUserAttributes((err, attributes) => {
+        if (err) {
+          console.error(err);
+          return res.status(500).json({ error: err.message });
+        }
+
+        const userRoleAttribute = attributes.find(attr => attr.getName() === 'custom:role');
+        const userIdAttribute = attributes.find(attr => attr.getName() === 'custom:userId');
+        const userRole = userRoleAttribute ? userRoleAttribute.getValue() : 'unknown';
+        const userId = userIdAttribute ? userIdAttribute.getValue() : 'unknown';
+        res.json({
+          message: 'User successfully logged in',
+          accessToken: session.getAccessToken().getJwtToken(),
+          role: userRole,
+          id: userId
+        });
+      });
+    },
+    onFailure: (err) => {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    },
+  });
+});
+
+app.post('/change-password', (req, res) => {
+  const { email, oldPassword, newPassword } = req.body;
+
+  const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails({
+    Username: email,
+    Password: oldPassword,
+  });
+
+  const userData = {
+    Username: email,
+    Pool: userPool,
+  };
+
+  const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+
+  cognitoUser.authenticateUser(authenticationDetails, {
+    onSuccess: () => {
+      cognitoUser.changePassword(oldPassword, newPassword, (err, result) => {
+        if (err) {
+          console.error(err);
+          return res.status(500).json({ error: err.message });
+        }
+        res.json({ message: 'Password successfully changed', result });
+      });
+    },
+    onFailure: (err) => {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    },
+  });
+});
+
+
+app.post('/logout', (req, res) => {
+  const { email } = req.body;
+
+  const userData = {
+    Username: email,
+    Pool: userPool,
+  };
+
+  const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+
+  if (cognitoUser) {
+    cognitoUser.signOut();
+    res.json({ message: 'User successfully logged out' });
+  } else {
+    res.status(400).json({ error: 'User not found' });
+  }
 });
