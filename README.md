@@ -1,2 +1,2 @@
 # faceId-attendance-service
-Node.js repository for backend service for global storage application build on aws
+Backend repository for rest APIs of Facial recognition based attendance management system: https://github.com/MohitSinghvi/faceId-attendance-ui/
